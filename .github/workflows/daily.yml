@@ -26,5 +26,4 @@ jobs:
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
           SOURCE_PLAYLIST_ID: ${{ secrets.SOURCE_PLAYLIST_ID }}
-          CLONE_NAME: ${{ secrets.CLONE_NAME }}
         run: python refresh_playlist.py
