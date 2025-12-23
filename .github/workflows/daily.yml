@@ -1,0 +1,30 @@
+name: Refresh Spotify Playlist Daily
+
+on:
+  schedule:
+    - cron: "0 10 * * *"   # daily at 12:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run refresh
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          SOURCE_PLAYLIST_ID: ${{ secrets.SOURCE_PLAYLIST_ID }}
+          CLONE_NAME: ${{ secrets.CLONE_NAME }}
+        run: python refresh_playlist.py
