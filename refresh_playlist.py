@@ -66,16 +66,27 @@ SOURCE_PLAYLIST_ID = normalize_playlist_id(SOURCE_PLAYLIST_ID)
 
 def get_all_track_uris(sp: spotipy.Spotify, playlist_id: str) -> list[str]:
     uris: list[str] = []
-    results = sp.playlist_items(playlist_id, additional_types=["track"])
+    results = sp.playlist_items(playlist_id, additional_types=["track", "episode"])
 
     while results:
         for item in results.get("items", []):
             track = item.get("track")
-            if track and track.get("uri"):
-                uris.append(track["uri"])
+            if not track:
+                continue
+
+            uri = track.get("uri")
+            if not uri:
+                continue
+
+            # Only keep real Spotify track URIs
+            # Skip local files and anything else
+            if uri.startswith("spotify:track:"):
+                uris.append(uri)
+
         results = sp.next(results) if results.get("next") else None
 
     return uris
+
 
 
 def iter_user_playlists(sp: spotipy.Spotify):
