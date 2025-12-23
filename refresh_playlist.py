@@ -3,7 +3,6 @@ import requests
 import spotipy
 
 SOURCE_PLAYLIST_ID = os.environ["SOURCE_PLAYLIST_ID"]
-CLONE_NAME = os.environ.get("CLONE_NAME", "Daily Playlist Clone")
 CACHE_FILE = "last_clone.txt"
 
 CLIENT_ID = os.environ["SPOTIFY_CLIENT_ID"]
@@ -71,14 +70,17 @@ def main():
             safe_delete_playlist(sp, old_id)
 
     # Copy source playlist
-    track_uris = get_all_track_uris(sp, SOURCE_PLAYLIST_ID)
+source_playlist = sp.playlist(SOURCE_PLAYLIST_ID)
+source_name = source_playlist["name"]
 
-    new_playlist = sp.user_playlist_create(
-        user=user_id,
-        name=CLONE_NAME,
-        public=False,
-        description="Auto-refreshed every 24 hours (GitHub Actions)",
-    )
+track_uris = get_all_track_uris(sp, SOURCE_PLAYLIST_ID)
+
+new_playlist = sp.user_playlist_create(
+    user=user_id,
+    name=source_name,
+    public=False,
+    description="Auto-refreshed every 24 hours (GitHub Actions)",
+)
 
     for i in range(0, len(track_uris), 100):
         sp.playlist_add_items(new_playlist["id"], track_uris[i:i + 100])
