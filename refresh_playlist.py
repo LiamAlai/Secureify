@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import requests
 import spotipy
 
+import base64
 # =========================
 # ENV / CONFIG
 # =========================
@@ -130,6 +131,22 @@ def delete_old_clones_keep_newest(sp: spotipy.Spotify, source_id: str):
         sp.current_user_unfollow_playlist(pid)
         print(f"Deleted old clone: {pid}")
 
+def copy_playlist_cover(sp: spotipy.Spotify, source_id: str, target_id: str):
+    images = sp.playlist_cover_image(source_id)
+    if not images:
+        return
+
+    image_url = images[0]["url"]
+
+    r = requests.get(image_url, timeout=30)
+    r.raise_for_status()
+
+    image_bytes = r.content
+
+    # Spotify requires base64-encoded JPEG
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    sp.playlist_upload_cover_image(target_id, image_b64)
 
 # =========================
 # MAIN
@@ -154,6 +171,11 @@ def main():
         public=False,
         description=hidden_desc,   # looks blank in most clients
     )
+
+    try:
+        copy_playlist_cover(sp, SOURCE_PLAYLIST_ID, new_playlist["id"])
+    except Exception as e:
+        print(f"Cover copy failed (non-fatal): {e}")
 
     for i in range(0, len(track_uris), 100):
         sp.playlist_add_items(new_playlist["id"], track_uris[i:i + 100])
