@@ -185,6 +185,20 @@ def main():
 
     print(f"Created new clone: {new_playlist['id']}")
 
+    spotify_url = f"https://open.spotify.com/playlist/{new_playlist['id']}"
+
+    with open("latest.html", "w", encoding="utf-8") as f:
+        f.write(f"""<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="refresh" content="0; url={spotify_url}" />
+  </head>
+  <body>
+    Redirecting to latest playlist…
+  </body>
+</html>
+""")
+
 
 if __name__ == "__main__":
     main()
