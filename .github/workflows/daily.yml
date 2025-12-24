@@ -27,3 +27,12 @@ jobs:
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
           SOURCE_PLAYLIST_ID: ${{ secrets.SOURCE_PLAYLIST_ID }}
         run: python refresh_playlist.py
+
+      - name: Commit latest.html
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add latest.html
+          git diff --cached --quiet || git commit -m "Update latest playlist redirect"
+          git push
+
