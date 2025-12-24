@@ -2,8 +2,11 @@ name: Refresh Spotify Playlist Daily
 
 on:
   schedule:
-    - cron: "0 10 * * *"   # daily at 12:00 UTC
+    - cron: "0 10 * * *"
   workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   run:
