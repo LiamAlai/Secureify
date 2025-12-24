@@ -14,9 +14,9 @@ CLIENT_ID = os.environ["SPOTIFY_CLIENT_ID"].strip()
 CLIENT_SECRET = os.environ["SPOTIFY_CLIENT_SECRET"].strip()
 REFRESH_TOKEN = os.environ["SPOTIFY_REFRESH_TOKEN"].strip()
 
-# Marker so we only delete OUR clones, never your original playlist
-CLONE_TAG = "[AUTOCLONE]"
+# Hidden marker in description so we can find clones without changing the visible name
 DESC_TAG_PREFIX = "autoclone_source="
+ZERO_WIDTH_SPACE = "\u200B"  # often renders as visually blank
 
 
 # =========================
@@ -48,13 +48,11 @@ def spotify_client() -> spotipy.Spotify:
 def normalize_playlist_id(value: str) -> str:
     value = value.strip()
 
-    # Full URL: https://open.spotify.com/playlist/<ID>?si=...
     if "open.spotify.com" in value and "/playlist/" in value:
         value = value.split("/playlist/")[1]
         value = value.split("?")[0]
         value = value.split("/")[0]
 
-    # URI: spotify:playlist:<ID>
     if value.startswith("spotify:playlist:"):
         value = value.split("spotify:playlist:")[1]
 
@@ -78,15 +76,12 @@ def get_all_track_uris(sp: spotipy.Spotify, playlist_id: str) -> list[str]:
             if not uri:
                 continue
 
-            # Only keep real Spotify track URIs
-            # Skip local files and anything else
             if uri.startswith("spotify:track:"):
                 uris.append(uri)
 
         results = sp.next(results) if results.get("next") else None
 
     return uris
-
 
 
 def iter_user_playlists(sp: spotipy.Spotify):
@@ -97,31 +92,23 @@ def iter_user_playlists(sp: spotipy.Spotify):
         results = sp.next(results) if results.get("next") else None
 
 
-def parse_clone_timestamp(name: str):
-    # Expected ending: "[AUTOCLONE] 2025-12-23 10:00 UTC"
-    m = re.search(r"\[AUTOCLONE\]\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+UTC)$", name)
-    if not m:
-        return None
-    try:
-        return datetime.strptime(m.group(1), "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
-    except Exception:
-        return None
+def extract_source_id_from_desc(desc: str) -> str | None:
+    # Find autoclone_source=<id> anywhere in the description (even if prefixed by zero width space)
+    m = re.search(r"autoclone_source=([A-Za-z0-9]{22})", desc or "")
+    return m.group(1) if m else None
 
 
 def find_clones(sp: spotipy.Spotify, source_id: str):
     clones = []
     for pl in iter_user_playlists(sp):
         pid = pl.get("id")
-        name = pl.get("name", "")
         desc = pl.get("description") or ""
-
         if not pid:
             continue
 
-        # Only consider playlists we created (tag + matching source ID in description)
-        if CLONE_TAG in name and f"{DESC_TAG_PREFIX}{source_id}" in desc:
-            ts = parse_clone_timestamp(name)
-            clones.append((ts, pid, name))
+        tagged_source = extract_source_id_from_desc(desc)
+        if tagged_source == source_id:
+            clones.append(pid)
 
     return clones
 
@@ -129,28 +116,19 @@ def find_clones(sp: spotipy.Spotify, source_id: str):
 def delete_old_clones_keep_newest(sp: spotipy.Spotify, source_id: str):
     clones = find_clones(sp, source_id)
 
-    # Safety: never delete the original by accident
-    clones = [c for c in clones if c[1] != source_id]
+    # Safety: never delete the original source playlist
+    clones = [pid for pid in clones if pid != source_id]
 
-    # Prefer timestamped sorting
-    with_ts = [c for c in clones if c[0] is not None]
-    without_ts = [c for c in clones if c[0] is None]
+    if not clones:
+        return
 
-    with_ts.sort(key=lambda x: x[0], reverse=True)
-
-    to_delete = []
-    if with_ts:
-        # keep the newest timestamped clone
-        to_delete.extend(with_ts[1:])
-        # and delete any weird un-timestamped clones too
-        to_delete.extend(without_ts)
-    else:
-        # no timestamps found, delete all clones we matched (tag + desc)
-        to_delete.extend(without_ts)
-
-    for _, pid, pname in to_delete:
+    # We will keep the most recently created clone by using playlist "added_at" order in your library.
+    # current_user_playlists returns in the order Spotify shows in your library (recent-ish),
+    # but to be safe we will keep the last one we see in that order and delete the rest.
+    # Simpler: keep the newest created in THIS run and delete all previously tagged ones before creation.
+    for pid in clones:
         sp.current_user_unfollow_playlist(pid)
-        print(f"Deleted old clone: {pname} ({pid})")
+        print(f"Deleted old clone: {pid}")
 
 
 # =========================
@@ -160,24 +138,21 @@ def main():
     sp = spotify_client()
     user_id = sp.current_user()["id"]
 
-    # Read source playlist name (original is never modified)
     source_playlist = sp.playlist(SOURCE_PLAYLIST_ID)
     source_name = source_playlist["name"]
 
-    # Delete older clones first (keep newest)
+    # Delete all previously tagged clones BEFORE creating the new one
     delete_old_clones_keep_newest(sp, SOURCE_PLAYLIST_ID)
-
-    # Create a fresh clone with a timestamp so we can reliably sort later
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    clone_name = f"{source_name} {CLONE_TAG} {stamp}"
 
     track_uris = get_all_track_uris(sp, SOURCE_PLAYLIST_ID)
 
+    hidden_desc = f"{ZERO_WIDTH_SPACE}{DESC_TAG_PREFIX}{SOURCE_PLAYLIST_ID}"
+
     new_playlist = sp.user_playlist_create(
         user=user_id,
-        name=clone_name,
+        name=source_name,          # same name as original
         public=False,
-        description=f"Auto-refreshed every 24 hours (GitHub Actions). {DESC_TAG_PREFIX}{SOURCE_PLAYLIST_ID}",
+        description=hidden_desc,   # looks blank in most clients
     )
 
     for i in range(0, len(track_uris), 100):
@@ -186,7 +161,6 @@ def main():
     print(f"Created new clone: {new_playlist['id']}")
 
     spotify_url = f"https://open.spotify.com/playlist/{new_playlist['id']}"
-
     with open("latest.html", "w", encoding="utf-8") as f:
         f.write(f"""<!doctype html>
 <html>
